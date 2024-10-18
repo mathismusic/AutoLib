@@ -5,7 +5,7 @@ from automaton import automaton
 import dfa
 
 class nfa(automaton):
-    def __init__(self, Q: set|list|int, A: set|list|int, Q_0: set|list|str, F: set|list|str, name:str=None) -> None:
+    def __init__(self, Q: set|list|int, A: set|list|int, Q_0: set|list|str, F: set|list|str, name:str|None=None) -> None:
         super().__init__(Q, A, F, name)
         self.Q_0 = self._format(Q_0)
         assert self.Q_0.issubset(self.Q), f'Q_0 = {self.Q_0} not a subset of Q = {self.Q}'
@@ -34,6 +34,9 @@ class nfa(automaton):
             it.remove(q2)
             if len(it) == 0:
                 self.delta.pop((q1, a))
+    
+    def draw_format(self, q):
+        return q
     
     def draw(self, savefig=False, directory=None, filename=None):
         fig = gv.Digraph(self.name, format='png')
@@ -75,15 +78,11 @@ class nfa(automaton):
         # recurse. We recurse on single head and tail (this seems to be faster in Python than on l[:-1] and l[-1])
         head = word[0]
         tail = word[1:]
-        print("yee", head, tail)
-        if tail == "":
-            subsets = [self.delta[(q, head)] for q in X if (q, head) in self.delta]
-            print(subsets)
-            if len(subsets) == 0: return set()
-            return set.union(*subsets)
-        return self.extended_delta(self.extended_delta(X, head), tail)
-        # return set.union(*[self.extended_delta(q_, tail) for q_ in self.delta[(q, head)]])
-        
+        # print("yee", head, tail)
+        one_step_lst = [self.delta[(q, head)] for q in X if (q, head) in self.delta]
+        one_step = set.union(*one_step_lst) if len(one_step_lst) > 0 else set()
+        return self.extended_delta(one_step, tail)
+
     def clear_edges(self):
         self.delta = {}
         return self
@@ -106,25 +105,14 @@ class nfa(automaton):
                 assert dfa2.delta[(q, a)] in Q, f'dfa2.delta[{q}, {a}] = {dfa2.delta[(q, a)]} not in Q = {Q}'
         return dfa2
 
-    # no deterministic path. Random run is not very useful? - use backtracking instead to check whether accepted or not
-    # def run_from(self, q, word: str):
-    #     assert q in self.Q, f'q = {q} not in Q = {self.Q}'
-    #     path = f'{q}'
-    #     if len(word) == 0:
-    #         return path, (q in self.F)
-    #     # recurse. We will recurse on single head and tail
-                  
-    # def run(self, word: str):
-    #     q = self.Q_0
-    #     for a in word:
-    #         q = self.delta[(q[0], a)]
-    #         if q is None: return False
-    #     return any([q_ in self.F for q_ in q])
     def load_from_dfa(self, M: dfa.dfa):
         super().__init__(M.Q, M.A, M.F, name=M.name + '.nfa')
         self.Q_0 = self._format(set([M.Q_0]))
         for (q, a), q2 in M.delta.items():
             self.delta[(q, a)] = set([q2])
+
+    def accepts(self, word: str):
+        return self.extended_delta(self.Q_0, word) & self.F != set()
     
 if __name__ == '__main__':
     Q = ['q0', 'q1', 'q2']
@@ -140,25 +128,6 @@ if __name__ == '__main__':
     M.draw()
     M_dfa = M.to_dfa()
     M_dfa.draw()
-    # a much more complicated example
-    # Q = ['q0', 'q1', 'q2', 'q3', 'q4', 'q5']
-    # A = ['0', '1']
-    # Q_0 = ['q0']
-    # F = ['q5']
-    # M = automaton(Q, A, Q_0, F, name='M')
-    # M.add_edge('q0', 'q1', '0')
-    # M.add_edge('q0', 'q2', '1')
-    # M.add_edge('q1', 'q3', '0')
-    # M.add_edge('q1', 'q2', '1')
-    # M.add_edge('q2', 'q1', '0')
-    # M.add_edge('q2', 'q4', '1')
-    # M.add_edge('q3', 'q5', '0')
-    # M.add_edge('q3', 'q2', '1')
-    # M.add_edge('q4', 'q1', '0')
-    # M.add_edge('q4', 'q4', '1')
-    # M.add_edge('q5', 'q5', '0')
-    # M.add_edge('q5', 'q5', '1')
-    # M.draw()
 
     # print the transition table
     print('Transition table:')
@@ -169,3 +138,60 @@ if __name__ == '__main__':
     print('Some runs:')
     for word in ['010', '011', '101', '111', '000', '001']:
         print(f'{word}: {M.run(word)}')
+
+class eps_nfa(nfa):
+    eps = 'ϵ'
+    def __init__(self, Q: set | list | int, A: set | list | int, Q_0: set | list | str, F: set | list | str, name: str | None = None) -> None:
+        super().__init__(Q, A, Q_0, F, name)
+        self.A.add(self.eps)
+
+    def eps_closure(self, X: set):
+        if not hasattr(self, 'closure'): 
+            self.set_eps_closure()
+        if isinstance(X, set):
+            return set.union(*[self.closure[q] for q in X])
+        assert X in self.Q, f'X = {X} not in Q = {self.Q}'
+        return self.closure[X]
+    
+    def set_eps_closure(self):
+        if hasattr(self, 'closure'): return
+        closures = {}
+        def recurse(q):
+            if q in closures: return closures[q]
+            closure = set([q])
+            if (q, self.eps) in self.delta:
+                for q_ in self.delta[(q, self.eps)]:
+                    closure = closure.union(recurse(q_))
+            closures[q] = closure
+            return closure
+        for q in self.Q:
+            recurse(q)
+        self.closure = closures
+        return self
+    
+    def extended_delta(self, X: set, word: str):
+        if len(X) == 0: return X
+        assert X.issubset(self.Q), f'X = {X} not a subset of Q = {self.Q}'
+        self.set_eps_closure()
+        X = self.eps_closure(X)
+
+        if len(word) == 0:
+            return X
+        head = word[0]; tail = word[1:]
+        one_step_lst = [self.eps_closure(self.delta[(q, head)]) for q in X if (q, head) in self.delta]
+        one_step = self.eps_closure(set.union(*one_step_lst)) if len(one_step_lst) > 0 else set()
+        return self.extended_delta(one_step, tail)
+    
+    def to_nfa(self):
+        A = self.A - set([self.eps])
+        self.set_eps_closure()
+        M = nfa(self.Q, A, self.eps_closure(self.Q_0), self.F, name=self.name + '.to_nfa')
+        
+        for (q, a) in self.delta:
+            if a == self.eps: continue
+            M.delta[(q, a)] = self.eps_closure(self.extended_delta(set([q]), a))
+            # these are not the only edges that will be added - or are they?
+        return M
+    
+    def to_dfa(self):
+        return self.to_nfa().to_dfa()

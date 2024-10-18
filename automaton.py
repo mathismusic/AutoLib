@@ -1,7 +1,7 @@
 # Om Sri Sai Ram
 
 class automaton:
-    def __init__(self, Q: set|list|int, A: set|list|int, F: set|list|str, name:str=None) -> None:
+    def __init__(self, Q: set|list|int, A: set|list|int, F: set|list|str, name:str|None=None) -> None:
         self.Q: set = self._format(Q)
         self.A: set = self._format(A)
         self.F: set = self._format(F)
@@ -24,6 +24,9 @@ class automaton:
     
     def add_edge(self, q1, q2, a):
         pass
+
+    def add_transition(self, q1, a, q2):
+        return self.add_edge(q1, q2, a)
     
     def remove_edge(self, q1, q2, a):
         pass

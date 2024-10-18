@@ -3,7 +3,7 @@ from automaton import automaton
 from typing import Any
 
 class dfa(automaton):
-    def __init__(self, Q: set|list|int, A: set|list|int, Q_0: Any, F: set|list|str, name:str=None) -> None:
+    def __init__(self, Q: set|list|int, A: set|list|int, Q_0: Any, F: set|list|str, name:str|None=None) -> None:
         super().__init__(Q, A, F, name)
         # self.Q_0 = self.Q[Q_0] if isinstance(Q_0, int) else Q_0
         self.Q_0 = Q_0
@@ -169,7 +169,7 @@ class dfa(automaton):
         classes: list[list] = []
         for q in self.Q:
             for cls in classes:
-                elem = next(cls)
+                elem = cls[0]
                 if (q, elem) in table and table[(q, elem)]: 
                     cls.append(q)
                     break
@@ -179,7 +179,46 @@ class dfa(automaton):
             else:
                 classes.append([q])
         return classes
-                    
+    
+    def minimize(self):
+        classes = self.remove_unreachable_states().get_equivalence_classes()
+        elem_to_class = {elem: i for i,cls in enumerate(classes) for elem in cls}
+        min_elem_per_class = [min(cls) for cls in classes]
+
+        self.Q = self._format(min_elem_per_class)
+        
+        self.Q_0 = min_elem_per_class[elem_to_class[self.Q_0]]
+
+        F = []
+        for q in self.Q:
+            if q in self.F: F.append(q)
+        self.F = self._format(F)
+
+        assert self.Q_0 in self.Q, f'Q_0 = {self.Q_0} not in Q = {self.Q}'
+        # assert self.F.issubset(self.Q), f'F = {self.F} not in Q = {self.Q}'
+        delta = {}
+        
+        for q in self.Q:
+            for a in self.A:
+                q2 = self.delta[(q, a)]
+                delta[(q, a)] = min_elem_per_class[elem_to_class[q2]]
+        self.delta = delta
+        return self
+    
+    def relabel(self):
+        # relabel Q to {0, 1, 2, ...Q-1}
+        relabel_map = {self.Q_0: 0}
+        for i, q in enumerate(self.Q):
+            if q == self.Q_0: continue
+            relabel_map[q] = i+1
+        self.Q = set(relabel_map.values())
+        self.Q_0 = relabel_map[self.Q_0]
+        self.F = set(relabel_map[q] for q in self.F)
+        delta = {}
+        for (q, a), q2 in self.delta.items():
+            delta[(relabel_map[q], a)] = relabel_map[q2]
+        self.delta = delta
+        return self
 
 if __name__ == '__main__':
     Q = ['q0', 'q1', 'q2']
